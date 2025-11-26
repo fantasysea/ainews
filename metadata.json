@@ -1,0 +1,5 @@
+{
+  "name": "AI Nexus - Intelligent News Aggregator",
+  "description": "A local-first, privacy-focused AI news aggregator that curates the latest updates from Hacker News, Dev.to, and AI communities. Features intelligent categorization, local persistence, and Gemini-powered summarization.",
+  "requestFramePermissions": []
+}
