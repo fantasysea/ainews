@@ -40,8 +40,11 @@ const AppContent: React.FC = () => {
       // 1. Fetch raw data (now uses config internally)
       let newItems = await fetchAllNews();
       
-      // 2. If API Key exists, run AI analysis (on top 5 for demo purposes)
-      if (process.env.API_KEY) {
+      // 2. Safe check for API Key before analysis
+      // In Vite with our define config, process.env exists but API_KEY might be undefined.
+      const hasApiKey = process && process.env && process.env.API_KEY;
+      
+      if (hasApiKey) {
          newItems = await analyzeNewsBatch(newItems);
       }
 
@@ -62,7 +65,7 @@ const AppContent: React.FC = () => {
 
     } catch (error) {
       console.error("Failed to refresh news", error);
-      alert("Failed to fetch latest news. Check console.");
+      // Don't alert aggressively, just log
     } finally {
       setLoading(false);
     }
@@ -72,7 +75,7 @@ const AppContent: React.FC = () => {
     return items.filter(item => {
       const matchesCategory = category === Category.ALL || item.category === category;
       const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            item.summary?.toLowerCase().includes(searchTerm.toLowerCase());
+                            (item.summary && item.summary.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchesCategory && matchesSearch;
     });
   }, [items, category, searchTerm]);

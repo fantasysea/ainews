@@ -1,6 +1,13 @@
 
-import { NewsItem, Source, Category } from '../types';
+import { NewsItem, Source, Category, ScraperConfig } from '../types';
 import { getConfig } from './configService';
+
+// Fallback Nitter instances in case one is rate-limited or down
+const NITTER_INSTANCES = [
+  'nitter.privacydev.net',
+  'nitter.poast.org',
+  'nitter.net'
+];
 
 // --- Helper: Categorization Logic ---
 const categorizeItem = (title: string, content: string = '', keywordsConfig: Record<Category, string[]>): Category => {
@@ -77,20 +84,85 @@ const fetchDevTo = async (config: any): Promise<NewsItem[]> => {
   }
 };
 
-// --- API 3: RSS Feeds (via CORS Proxy) ---
-// Using allorigins.win to bypass CORS for client-side RSS fetching
+// --- API 3: RSS Feeds (Robust Strategy with Nitter Fallback) ---
 const fetchRSSFeed = async (url: string, config: any): Promise<NewsItem[]> => {
   if (!config.enabledSources[Source.RSS]) return [];
 
-  try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
-    const data = await response.json();
+  // Helper to fetch with fallback for Nitter
+  const fetchWithNitterFallback = async (targetUrl: string): Promise<string> => {
+    let currentUrl = targetUrl;
+    // Check if it's a Nitter URL
+    const isNitter = NITTER_INSTANCES.some(host => targetUrl.includes(host)) || targetUrl.includes('nitter');
     
-    if (!data.contents) return [];
+    // Try original first
+    try {
+       const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(currentUrl)}`;
+       const res = await fetch(proxyUrl);
+       if (res.ok) return await res.text();
+    } catch (e) {
+      if (!isNitter) throw e;
+    }
 
+    if (isNitter) {
+      // Extract username/path from the failed URL to try others
+      let path = '';
+      try {
+         const u = new URL(targetUrl);
+         path = u.pathname + u.search;
+      } catch (e) { return ''; }
+
+      // Try other instances
+      for (const instance of NITTER_INSTANCES) {
+        if (targetUrl.includes(instance)) continue; // skip already tried
+        try {
+           const altUrl = `https://${instance}${path}`;
+           // console.log(`Falling back to ${altUrl}`);
+           const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(altUrl)}`;
+           const res = await fetch(proxyUrl);
+           if (res.ok) return await res.text();
+        } catch (e) { continue; }
+      }
+    }
+    throw new Error("All Nitter instances failed");
+  };
+
+  try {
+    // Strategy A: Try rss2json (skip for Nitter as it often blocks bots/RSS services)
+    if (!url.includes('nitter')) {
+        const rss2JsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+        const response = await fetch(rss2JsonUrl);
+        const data = await response.json();
+    
+        if (data.status === 'ok' && data.items) {
+          const feedTitle = data.feed.title || "RSS Feed";
+          return data.items.map((item: any, index: number) => {
+            const title = item.title;
+            const description = item.description || item.content || "";
+            const category = categorizeItem(title, description, config.keywords);
+            
+            // NOTE: For Manual RSS, we deliberately SKIP the strict AI keyword filter.
+            // If a user subscribes to a specific feed, they likely want to see all content from it.
+            
+            return {
+              id: `rss-${url}-${index}`,
+              title: title,
+              url: item.link,
+              summary: description.replace(/<[^>]*>?/gm, '').slice(0, 150) + '...',
+              source: Source.RSS,
+              sourceLabel: feedTitle,
+              category: category,
+              timestamp: item.pubDate ? new Date(item.pubDate).getTime() : Date.now(),
+              author: item.author || feedTitle
+            };
+          }).filter((i: any) => i !== null);
+        }
+    }
+    
+    // Strategy B: Fallback/Nitter handling (Raw XML via Proxy)
+    const text = await fetchWithNitterFallback(url);
+    
     const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(data.contents, "text/xml");
+    const xmlDoc = parser.parseFromString(text, "text/xml");
     const items = Array.from(xmlDoc.querySelectorAll("item"));
     const feedTitle = xmlDoc.querySelector("channel > title")?.textContent || "RSS Feed";
 
@@ -100,41 +172,84 @@ const fetchRSSFeed = async (url: string, config: any): Promise<NewsItem[]> => {
       const description = item.querySelector("description")?.textContent || "";
       const pubDate = item.querySelector("pubDate")?.textContent || "";
       
-      // Simple logic: if title/desc has AI keywords OR the feed is manually added (user likely wants it), keep it.
-      // We still apply categorization.
       const category = categorizeItem(title, description, config.keywords);
       
-      // If it's a generic RSS, we filter for AI. If user added it specifically, we might be more lenient,
-      // but to keep "AI News" focus, let's still filter, but maybe user wants all posts from that blog.
-      // For now, let's include it if it matches AI filter OR if it's categorized as Startup/Models/Tools.
-      const isRelevant = isAIContent(title, description, config.globalFilter) || category !== Category.GENERAL;
-
-      if (!isRelevant) return null;
-
+      // NOTE: Skip strict filtering for manual RSS/Twitter
+      
       return {
-        id: `rss-${url}-${index}`,
+        id: `rss-${url}-${index}-fallback`,
         title: title,
         url: link,
-        summary: description.replace(/<[^>]*>?/gm, '').slice(0, 150) + '...', // Strip HTML tags
+        summary: description.replace(/<[^>]*>?/gm, '').slice(0, 150) + '...',
         source: Source.RSS,
         sourceLabel: feedTitle,
         category: category,
         timestamp: pubDate ? new Date(pubDate).getTime() : Date.now(),
-        author: xmlDoc.querySelector("channel > title")?.textContent || 'Blog'
+        author: feedTitle
       };
     }).filter((i): i is NewsItem => i !== null);
 
-  } catch (error) {
-    console.warn(`Error fetching RSS ${url}:`, error);
+  } catch (fallbackError) {
+    console.error(`RSS failed for ${url}`, fallbackError);
     return [];
   }
 };
 
-// --- API 4: Mock Reddit (Fallback) ---
+// --- API 4: Custom HTML Scraper ---
+const fetchHtmlScraper = async (scraper: ScraperConfig, config: any): Promise<NewsItem[]> => {
+  if (!config.enabledSources[Source.HTML]) return [];
+
+  try {
+    // Use allorigins to get HTML string wrapped in JSON to bypass CORS
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(scraper.url)}`;
+    const response = await fetch(proxyUrl);
+    const data = await response.json();
+    
+    if (!data.contents) throw new Error("No content returned from proxy");
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(data.contents, "text/html");
+    const containers = Array.from(doc.querySelectorAll(scraper.containerSelector));
+
+    return containers.map((container, index) => {
+      const titleEl = scraper.titleSelector ? container.querySelector(scraper.titleSelector) : container;
+      const linkEl = scraper.linkSelector ? container.querySelector(scraper.linkSelector) : container;
+      const summaryEl = scraper.summarySelector ? container.querySelector(scraper.summarySelector) : null;
+
+      const title = titleEl?.textContent?.trim() || "No Title";
+      let url = linkEl?.getAttribute('href') || "#";
+      
+      // Handle relative URLs
+      if (url.startsWith('/')) {
+        const origin = new URL(scraper.url).origin;
+        url = origin + url;
+      }
+
+      const summary = summaryEl?.textContent?.trim().slice(0, 150) + '...';
+
+      return {
+        id: `html-${scraper.id}-${index}`,
+        title,
+        url,
+        summary,
+        source: Source.HTML,
+        sourceLabel: scraper.name,
+        category: categorizeItem(title, summary || '', config.keywords),
+        timestamp: Date.now(), // HTML scraping usually doesn't give clean timestamps
+        author: scraper.name
+      };
+    }).slice(0, 15); // Limit to top 15
+
+  } catch (error) {
+    console.error(`Scraper ${scraper.name} failed:`, error);
+    return [];
+  }
+};
+
+// --- API 5: Mock Reddit (Fallback) ---
 const fetchRedditMock = async (config: any): Promise<NewsItem[]> => {
   if (!config.enabledSources[Source.REDDIT_MOCK]) return [];
 
-  // Mocking some "Indie Hacker" style content
   const mockData = [
     {
       id: 'reddit-1',
@@ -145,15 +260,6 @@ const fetchRedditMock = async (config: any): Promise<NewsItem[]> => {
       timestamp: Date.now() - 1000000,
       score: 4500,
       summary: "Sharing my journey of building a legal tech SaaS wrapper. The key was fine-tuning the prompt."
-    },
-    {
-      id: 'reddit-2',
-      title: 'Open Source tool for local LLM orchestration',
-      url: '#',
-      source: Source.REDDIT_MOCK,
-      category: Category.TOOLS,
-      timestamp: Date.now() - 3600000,
-      score: 230
     }
   ];
   return mockData; 
@@ -164,12 +270,14 @@ export const fetchAllNews = async (): Promise<NewsItem[]> => {
   const config = getConfig();
 
   const rssPromises = (config.rssFeeds || []).map(url => fetchRSSFeed(url, config));
+  const scraperPromises = (config.htmlScrapers || []).map(s => fetchHtmlScraper(s, config));
 
   const results = await Promise.all([
     fetchHackerNews(config),
     fetchDevTo(config),
     fetchRedditMock(config),
-    ...rssPromises
+    ...rssPromises,
+    ...scraperPromises
   ]);
 
   // Flatten results

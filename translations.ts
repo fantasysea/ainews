@@ -1,5 +1,4 @@
 
-
 import { Category, Source } from './types';
 
 export const translations = {
@@ -33,12 +32,16 @@ export const translations = {
     settingsTitle: "Configuration & Rules",
     settingsDesc: "Customize how AI Nexus scrapes and categorizes data.",
     sourcesTitle: "Active Data Sources",
-    rssTitle: "Custom RSS Feeds",
-    rssDesc: "Add RSS URLs from blogs or newsletters. Cross-origin requests are proxied via allorigins.win.",
-    rssPlaceholder: "https://example.com/feed.xml",
-    addRss: "Add Feed",
+    rssTitle: "RSS & Twitter/X",
+    rssDesc: "Add RSS URLs or Twitter usernames (e.g. 'elonmusk' -> Nitter RSS).",
+    rssPlaceholder: "https://... or Twitter username",
+    addRss: "Add",
+    nitterTip: "Tip: Using nitter.privacydev.net by default. If it fails, try replacing domain with nitter.poast.org in the list below.",
+    htmlTitle: "Custom HTML Scrapers",
+    htmlDesc: "Scrape websites that don't have RSS (e.g., QbitAI) using CSS selectors.",
+    addScraper: "Add Scraper",
     keywordsTitle: "Categorization Keywords (JSON)",
-    keywordsDesc: "Edit keywords to tag content. To catch 'Indie Hacker' stories, add terms like 'revenue', 'mrr' to the Startups category.",
+    keywordsDesc: "Edit keywords to tag content.",
     saveSettings: "Save Configuration",
     resetSettings: "Reset to Defaults",
     
@@ -77,12 +80,16 @@ export const translations = {
     settingsTitle: "配置与抓取规则",
     settingsDesc: "自定义 AI Nexus 如何抓取和分类数据。",
     sourcesTitle: "启用的数据源",
-    rssTitle: "自定义 RSS 订阅源",
-    rssDesc: "添加博客或 Newsletter 的 RSS 地址。请求将通过代理服务转发以解决跨域问题。",
-    rssPlaceholder: "https://example.com/feed.xml",
-    addRss: "添加订阅",
+    rssTitle: "自定义 RSS 与 Twitter",
+    rssDesc: "输入 RSS 地址，或直接输入 Twitter 用户名（如 'OpenAI'，将自动转换为 Nitter RSS）。",
+    rssPlaceholder: "https://... 或 Twitter ID",
+    addRss: "添加",
+    nitterTip: "提示：默认使用 privacydev 节点。如果加载失败，请尝试在下方列表中将域名修改为 nitter.poast.org。",
+    htmlTitle: "自定义网页抓取 (HTML Scraper)",
+    htmlDesc: "针对没有 RSS 的网站（如量子位），使用 CSS 选择器直接抓取页面内容。",
+    addScraper: "添加抓取规则",
     keywordsTitle: "分类关键词配置 (JSON)",
-    keywordsDesc: "编辑关键词以改变分类方式。想要获取“小人物赚钱”的故事，请在“Startups”分类中保留 'mrr', 'revenue', 'bootstrapped' 等词。",
+    keywordsDesc: "编辑关键词以改变分类方式。",
     saveSettings: "保存配置",
     resetSettings: "重置默认",
 

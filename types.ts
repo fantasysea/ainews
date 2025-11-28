@@ -1,3 +1,4 @@
+
 export enum Category {
   ALL = 'All',
   MODELS = 'Models',
@@ -12,7 +13,19 @@ export enum Source {
   DEV_TO = 'Dev.to',
   REDDIT_MOCK = 'Reddit (Mock)', 
   RSS = 'RSS Feed',
-  MANUAL = 'Manual Entry'
+  MANUAL = 'Manual Entry',
+  HTML = 'Custom Scraper'
+}
+
+export interface ScraperConfig {
+  id: string;
+  name: string;
+  url: string;
+  // CSS Selectors
+  containerSelector: string; // The list item container, e.g., ".article-card"
+  titleSelector: string;     // Inside container, e.g., "h2 > a"
+  linkSelector: string;      // Inside container, e.g., "h2 > a"
+  summarySelector?: string;  // Inside container, e.g., ".excerpt"
 }
 
 export interface NewsItem {
